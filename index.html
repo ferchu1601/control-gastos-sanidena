@@ -45,6 +45,10 @@
         setDescripcion('');
       };
 
+      const eliminarTransaccion = (id) => {
+        setTransacciones(transacciones.filter(tx => tx.id !== id));
+      };
+
       const totalGastos = transacciones.reduce((acc, tx) => acc + tx.monto, 0);
       const saldoRestante = cajaAhorro - totalGastos;
 
@@ -159,7 +163,7 @@
             </button>
           </form>
 
-          {/* Historial */}
+          {/* Historial con opción de eliminar */}
           <div className="space-y-3">
             <h3 className="font-bold text-lg text-slate-700">Últimos Registros</h3>
             {transacciones.length === 0 ? (
@@ -171,7 +175,16 @@
                     <p className="font-bold text-slate-800">{tx.descripcion || tx.categoria}</p>
                     <p className="text-xs text-slate-500">{tx.fecha} • {tx.categoria} (<span className="capitalize">{tx.metodo.replace('_', ' ')}</span>)</p>
                   </div>
-                  <span className="font-bold text-rose-600">-${tx.monto.toLocaleString('es-AR')}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-rose-600">-${tx.monto.toLocaleString('es-AR')}</span>
+                    <button 
+                      onClick={() => eliminarTransaccion(tx.id)}
+                      className="text-slate-400 hover:text-rose-600 font-bold px-1.5 py-0.5 rounded transition text-sm"
+                      title="Eliminar gasto"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               ))
             )}
