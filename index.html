@@ -13,14 +13,9 @@
   <div id="root"></div>
   <script type="text/babel">
     function App() {
-      const [saldosIniciales, setSaldosIniciales] = React.useState({
-        mercado_pago: 0,
-        transferencia: 0,
-        efectivo: 0,
-        tarjeta_credito: 0
-      });
-      const [editandoSaldos, setEditandoSaldos] = React.useState(false);
-      const [tempSaldos, setTempSaldos] = React.useState(saldosIniciales);
+      const [cajaAhorro, setCajaAhorro] = React.useState(0);
+      const [editandoCaja, setEditandoCaja] = React.useState(false);
+      const [tempCaja, setTempCaja] = React.useState('');
 
       const [transacciones, setTransacciones] = React.useState([]);
       const [monto, setMonto] = React.useState('');
@@ -28,15 +23,10 @@
       const [categoria, setCategoria] = React.useState('Supermercado');
       const [metodo, setMetodo] = React.useState('mercado_pago');
 
-      const guardarSaldos = (e) => {
+      const guardarCajaAhorro = (e) => {
         e.preventDefault();
-        setSaldosIniciales({
-          mercado_pago: parseFloat(tempSaldos.mercado_pago) || 0,
-          transferencia: parseFloat(tempSaldos.transferencia) || 0,
-          efectivo: parseFloat(tempSaldos.efectivo) || 0,
-          tarjeta_credito: parseFloat(tempSaldos.tarjeta_credito) || 0
-        });
-        setEditandoSaldos(false);
+        setCajaAhorro(parseFloat(tempCaja) || 0);
+        setEditandoCaja(false);
       };
 
       const agregarTransaccion = (e) => {
@@ -55,9 +45,8 @@
         setDescripcion('');
       };
 
-      const totalIngresosIniciales = Object.values(saldosIniciales).reduce((a, b) => a + b, 0);
       const totalGastos = transacciones.reduce((acc, tx) => acc + tx.monto, 0);
-      const saldoDisponible = totalIngresosIniciales - totalGastos;
+      const saldoRestante = cajaAhorro - totalGastos;
 
       return (
         <div className="max-w-md mx-auto p-4 space-y-6">
@@ -66,76 +55,57 @@
             <p className="text-sm text-slate-600">Usuario: <span className="font-semibold text-slate-900">SANIDENA</span></p>
           </header>
 
-          {/* Sección de Saldos Iniciales */}
+          {/* Caja de Ahorro Principal */}
           <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm space-y-3">
             <div className="flex justify-between items-center">
-              <h2 className="text-sm font-bold text-slate-700 uppercase">Saldos Iniciales / Cuentas</h2>
+              <h2 className="text-xs font-bold text-slate-500 uppercase">Caja de Ahorro / Ingreso Mensual</h2>
               <button 
-                onClick={() => { setTempSaldos(saldosIniciales); setEditandoSaldos(!editandoSaldos); }}
+                onClick={() => { setTempCaja(cajaAhorro); setEditandoCaja(!editandoCaja); }}
                 className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md font-semibold hover:bg-emerald-200 transition"
               >
-                {editandoSaldos ? 'Cancelar' : 'Configurar Saldos'}
+                {editandoCaja ? 'Cancelar' : 'Actualizar Dinero'}
               </button>
             </div>
 
-            {editandoSaldos ? (
-              <form onSubmit={guardarSaldos} className="space-y-3 pt-2 border-t border-slate-200">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="text-slate-600 font-medium">Mercado Pago</label>
-                    <input type="number" value={tempSaldos.mercado_pago} onChange={e=>setTempSaldos({...tempSaldos, mercado_pago: e.target.value})} className="w-full border rounded p-1.5 mt-1 bg-slate-50" />
-                  </div>
-                  <div>
-                    <label className="text-slate-600 font-medium">Transferencia</label>
-                    <input type="number" value={tempSaldos.transferencia} onChange={e=>setTempSaldos({...tempSaldos, transferencia: e.target.value})} className="w-full border rounded p-1.5 mt-1 bg-slate-50" />
-                  </div>
-                  <div>
-                    <label className="text-slate-600 font-medium">Efectivo</label>
-                    <input type="number" value={tempSaldos.efectivo} onChange={e=>setTempSaldos({...tempSaldos, efectivo: e.target.value})} className="w-full border rounded p-1.5 mt-1 bg-slate-50" />
-                  </div>
-                  <div>
-                    <label className="text-slate-600 font-medium">Tarjeta de Crédito</label>
-                    <input type="number" value={tempSaldos.tarjeta_credito} onChange={e=>setTempSaldos({...tempSaldos, tarjeta_credito: e.target.value})} className="w-full border rounded p-1.5 mt-1 bg-slate-50" />
-                  </div>
+            {editandoCaja ? (
+              <form onSubmit={guardarCajaAhorro} className="space-y-3 pt-2 border-t border-slate-200">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Dinero total en tu caja de ahorro ($)</label>
+                  <input 
+                    type="number" 
+                    value={tempCaja} 
+                    onChange={e => setTempCaja(e.target.value)} 
+                    placeholder="Ej: 300000" 
+                    className="w-full border rounded-lg p-2 bg-slate-50 text-slate-900" 
+                    required 
+                  />
                 </div>
                 <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-emerald-500">
-                  Guardar Saldos Iniciales
+                  Guardar Dinero Mensual
                 </button>
               </form>
             ) : (
-              <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                  <span className="text-slate-500 block">Mercado Pago</span>
-                  <span className="font-bold text-slate-800">${saldosIniciales.mercado_pago.toLocaleString('es-AR')}</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                  <span className="text-slate-500 block">Transferencia</span>
-                  <span className="font-bold text-slate-800">${saldosIniciales.transferencia.toLocaleString('es-AR')}</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                  <span className="text-slate-500 block">Efectivo</span>
-                  <span className="font-bold text-slate-800">${saldosIniciales.efectivo.toLocaleString('es-AR')}</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                  <span className="text-slate-500 block">Tarjeta Crédito</span>
-                  <span className="font-bold text-slate-800">${saldosIniciales.tarjeta_credito.toLocaleString('es-AR')}</span>
-                </div>
+              <div>
+                <p className="text-3xl font-extrabold text-emerald-600">${cajaAhorro.toLocaleString('es-AR')}</p>
+                <p className="text-xs text-slate-400 mt-1">De aquí se descontarán tus gastos de Mercado Pago, transferencias y otros.</p>
               </div>
             )}
           </div>
 
-          {/* Resumen Total */}
+          {/* Resumen de Saldo Disponible */}
           <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Saldo Líquido Disponible</h2>
-            <p className="text-3xl font-extrabold text-emerald-600">${saldoDisponible.toLocaleString('es-AR')}</p>
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dinero Restante en la Cuenta</h2>
+            <p className={`text-3xl font-extrabold ${saldoRestante < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+              ${saldoRestante.toLocaleString('es-AR')}
+            </p>
             <p className="text-xs text-slate-400 mt-1">Total Gastado: ${totalGastos.toLocaleString('es-AR')}</p>
           </div>
 
-          {/* Formulario de Movimientos */}
+          {/* Formulario de Gastos */}
           <form onSubmit={agregarTransaccion} className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm space-y-4">
             <h3 className="font-bold text-lg text-slate-700 border-b border-slate-200 pb-2">Registrar Movimiento</h3>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Monto ($)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Monto del Gasto ($)</label>
               <input 
                 type="number" 
                 value={monto} 
@@ -151,7 +121,7 @@
                 type="text" 
                 value={descripcion} 
                 onChange={(e) => setDescripcion(e.target.value)}
-                placeholder="Ej: Compra semanal" 
+                placeholder="Ej: Compra supermercado" 
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-900 focus:outline-none focus:border-emerald-500" 
               />
             </div>
@@ -171,7 +141,7 @@
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Medio de Pago</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">¿Cómo pagaste?</label>
                 <select 
                   value={metodo} 
                   onChange={(e) => setMetodo(e.target.value)}
@@ -185,11 +155,11 @@
               </div>
             </div>
             <button type="submit" className="w-full bg-emerald-600 text-white hover:bg-emerald-500 font-bold py-3 rounded-lg transition active:scale-95 shadow-sm">
-              Guardar Gasto
+              Descontar Gasto
             </button>
           </form>
 
-          {/* Listado de Gastos */}
+          {/* Historial */}
           <div className="space-y-3">
             <h3 className="font-bold text-lg text-slate-700">Últimos Registros</h3>
             {transacciones.length === 0 ? (
@@ -199,7 +169,7 @@
                 <div key={tx.id} className="bg-white p-3 rounded-lg border border-slate-300 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="font-bold text-slate-800">{tx.descripcion || tx.categoria}</p>
-                    <p className="text-xs text-slate-500">{tx.fecha} • {tx.categoria} ({tx.metodo.replace('_', ' ')})</p>
+                    <p className="text-xs text-slate-500">{tx.fecha} • {tx.categoria} (<span className="capitalize">{tx.metodo.replace('_', ' ')}</span>)</p>
                   </div>
                   <span className="font-bold text-rose-600">-${tx.monto.toLocaleString('es-AR')}</span>
                 </div>
