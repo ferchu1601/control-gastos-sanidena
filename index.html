@@ -8,25 +8,42 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
   <div id="root"></div>
+
   <script type="text/babel">
+    // Configuración de Firebase SANIDENA
+    const firebaseConfig = {
+      apiKey: "AIzaSyCBO4sAgRwssv-JfSmj7d7oVMMIZ12S_KU",
+      authDomain: "control-gastos-51669.firebaseapp.com",
+      projectId: "control-gastos-51669",
+      storageBucket: "control-gastos-51669.firebasestorage.app",
+      messagingSenderId: "717639817293",
+      appId: "1:717639817293:web:3e3da65bb5fb606427a404"
+    };
+
+    // Inicializar Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.firestore();
+
     function App() {
-      // Clave PIN de seguridad por defecto: 1234
+      // Clave PIN de seguridad (1234)
       const [pin] = React.useState('1234');
       const [pinIngresado, setPinIngresado] = React.useState('');
       const [autenticado, setAutenticado] = React.useState(false);
       const [errorPin, setErrorPin] = React.useState(false);
 
-      // Estados con memoria permanente (LocalStorage) para que no se borren al actualizar
-      const [cajaAhorro, setCajaAhorro] = React.useState(() => {
-        return parseFloat(localStorage.getItem('sanidena_caja')) || 0;
-      });
-      const [transacciones, setTransacciones] = React.useState(() => {
-        const saved = localStorage.getItem('sanidena_txs');
-        return saved ? JSON.parse(saved) : [];
-      });
+      // Estados sincronizados con Firebase
+      const [cajaAhorro, setCajaAhorro] = React.useState(0);
+      const [transacciones, setTransacciones] = React.useState([]);
+      const [cargando, setCargando] = React.useState(true);
 
       const [editandoCaja, setEditandoCaja] = React.useState(false);
       const [tempCaja, setTempCaja] = React.useState('');
@@ -38,14 +55,34 @@
       const [metodo, setMetodo] = React.useState('mercado_pago');
       const [editandoId, setEditandoId] = React.useState(null);
 
-      // Guardar automáticamente en el navegador cada vez que cambien
+      // Sincronización en tiempo real desde la Nube
       React.useEffect(() => {
-        localStorage.setItem('sanidena_caja', cajaAhorro);
-      }, [cajaAhorro]);
+        // Escuchar cambios en la caja de ahorro
+        const unsubCaja = db.collection('datos_sanidena').doc('caja').onSnapshot((doc) => {
+          if (doc.exists) {
+            setCajaAhorro(doc.data().monto || 0);
+          } else {
+            db.collection('datos_sanidena').doc('caja').set({ monto: 0 });
+          }
+        });
 
-      React.useEffect(() => {
-        localStorage.setItem('sanidena_txs', JSON.stringify(transacciones));
-      }, [transacciones]);
+        // Escuchar cambios en las transacciones
+        const unsubTx = db.collection('transacciones_sanidena')
+          .orderBy('fechaId', 'desc')
+          .onSnapshot((snapshot) => {
+            const txs = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            setTransacciones(txs);
+            setCargando(false);
+          });
+
+        return () => {
+          unsubCaja();
+          unsubTx();
+        };
+      }, []);
 
       const validarAcceso = (e) => {
         e.preventDefault();
@@ -57,35 +94,35 @@
         }
       };
 
-      const guardarCajaAhorro = (e) => {
+      const guardarCajaAhorro = async (e) => {
         e.preventDefault();
-        setCajaAhorro(parseFloat(tempCaja) || 0);
+        const nuevoValor = parseFloat(tempCaja) || 0;
+        await db.collection('datos_sanidena').doc('caja').set({ monto: nuevoValor });
         setEditandoCaja(false);
       };
 
-      const guardarTransaccion = (e) => {
+      const guardarTransaccion = async (e) => {
         e.preventDefault();
         if (!monto || isNaN(monto)) return;
 
         if (editandoId) {
-          setTransacciones(transacciones.map(tx => tx.id === editandoId ? {
-            ...tx,
+          await db.collection('transacciones_sanidena').doc(editandoId).update({
             monto: parseFloat(monto),
             descripcion,
             categoria,
             metodo
-          } : tx));
+          });
           setEditandoId(null);
         } else {
           const nuevaTx = {
-            id: Date.now(),
+            fechaId: Date.now(),
             monto: parseFloat(monto),
             descripcion,
             categoria,
             metodo,
             fecha: new Date().toLocaleDateString('es-AR')
           };
-          setTransacciones([nuevaTx, ...transacciones]);
+          await db.collection('transacciones_sanidena').add(nuevaTx);
         }
         setMonto('');
         setDescripcion('');
@@ -94,14 +131,14 @@
       const editarTransaccion = (tx) => {
         setEditandoId(tx.id);
         setMonto(tx.monto);
-        setDescripcion(tx.descripcion);
+        setDescripcion(tx.descripcion || '');
         setCategoria(tx.categoria);
         setMetodo(tx.metodo);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       };
 
-      const eliminarTransaccion = (id) => {
-        setTransacciones(transacciones.filter(tx => tx.id !== id));
+      const eliminarTransaccion = async (id) => {
+        await db.collection('transacciones_sanidena').doc(id).delete();
         if (editandoId === id) {
           setEditandoId(null);
           setMonto('');
@@ -112,7 +149,7 @@
       const totalGastos = transacciones.reduce((acc, tx) => acc + tx.monto, 0);
       const saldoRestante = cajaAhorro - totalGastos;
 
-      // Pantalla de bloqueo por PIN
+      // --- PANTALLA DE BLOQUEO POR PIN ---
       if (!autenticado) {
         return (
           <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
@@ -148,7 +185,7 @@
         );
       }
 
-      // Pantalla principal
+      // --- PANTALLA PRINCIPAL ---
       return (
         <div className="max-w-md mx-auto p-4 space-y-6 pb-12">
           <header className="border-b border-slate-300 pb-4 flex justify-between items-center">
@@ -221,7 +258,7 @@
             <p className="text-xs text-slate-400 mt-1">Total Gastado: {ocultarSaldo ? '••••' : `$${totalGastos.toLocaleString('es-AR')}`}</p>
           </div>
 
-          {/* Formulario de Movimiento */}
+          {/* Formulario de Gastos */}
           <form onSubmit={guardarTransaccion} className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-200 pb-2">
               <h3 className="font-bold text-lg text-slate-700">
@@ -295,17 +332,19 @@
           {/* Historial */}
           <div className="space-y-3">
             <h3 className="font-bold text-lg text-slate-700">Últimos Registros</h3>
-            {transacciones.length === 0 ? (
+            {cargando ? (
+              <p className="text-sm text-slate-500 text-center py-4 bg-white rounded-lg border border-slate-200">Cargando datos desde la nube...</p>
+            ) : transacciones.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-4 bg-white rounded-lg border border-slate-200">No hay gastos cargados aún.</p>
             ) : (
               transacciones.map(tx => (
                 <div key={tx.id} className="bg-white p-3 rounded-lg border border-slate-300 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="font-bold text-slate-800">{tx.descripcion || tx.categoria}</p>
-                    <p className="text-xs text-slate-500">{tx.fecha} • {tx.categoria} (<span className="capitalize">{tx.metodo.replace('_', ' ')}</span>)</p>
+                    <p className="text-xs text-slate-500">{tx.fecha} • {tx.categoria} (<span className="capitalize">{(tx.metodo || '').replace('_', ' ')}</span>)</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-rose-600">-${tx.monto.toLocaleString('es-AR')}</span>
+                    <span className="font-bold text-rose-600">-${(tx.monto || 0).toLocaleString('es-AR')}</span>
                     <button 
                       onClick={() => editarTransaccion(tx)}
                       className="text-slate-400 hover:text-amber-600 font-bold p-1 rounded transition text-xs bg-slate-50 border border-slate-200"
@@ -328,6 +367,7 @@
         </div>
       );
     }
+
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
 </body>
