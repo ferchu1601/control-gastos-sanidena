@@ -1,983 +1,141 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithCustomToken, 
-  signInAnonymously, 
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  onSnapshot, 
-  collection, 
-  addDoc, 
-  deleteDoc 
-} from 'firebase/firestore';
-import { 
-  Wallet, 
-  CreditCard, 
-  TrendingUp, 
-  TrendingDown, 
-  PlusCircle, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  DollarSign, 
-  Calendar, 
-  PieChart as PieIcon, 
-  Filter, 
-  Trash2, 
-  Edit3, 
-  CheckCircle, 
-  Sparkles,
-  ShoppingBag,
-  Pill,
-  FileText,
-  Utensils,
-  Smartphone,
-  HelpCircle,
-  PiggyBank,
-  LogOut,
-  Lock,
-  Mail,
-  UserCheck,
-  Shield,
-  Tag,
-  Loader2,
-  Receipt
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Gastos - SANIDENA</title>
+  <!-- Tailwind CSS para los estilos -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React y React DOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel para interpretar el código React en el navegador -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+  <div id="root"></div>
 
-// Categorías predefinidas
-const CATEGORIES = {
-  Supermercado: { name: 'Supermercado', icon: ShoppingBag, color: 'bg-emerald-500', lightColor: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  Farmacia: { name: 'Farmacia', icon: Pill, color: 'bg-rose-500', lightColor: 'bg-rose-50 text-rose-700 border-rose-200' },
-  Servicios: { name: 'Servicios / Pagos', icon: FileText, color: 'bg-blue-500', lightColor: 'bg-blue-50 text-blue-700 border-blue-200' },
-  Indumentaria: { name: 'Indumentaria / Ropa', icon: Tag, color: 'bg-indigo-500', lightColor: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  Ocio: { name: 'Salidas y Ocio', icon: Utensils, color: 'bg-amber-500', lightColor: 'bg-amber-50 text-amber-700 border-amber-200' },
-  Sueldo: { name: 'Sueldo / Ingreso', icon: TrendingUp, color: 'bg-teal-500', lightColor: 'bg-teal-50 text-teal-700 border-teal-200' },
-  Varios: { name: 'Varios', icon: HelpCircle, color: 'bg-purple-500', lightColor: 'bg-purple-50 text-purple-700 border-purple-200' }
-};
+  <script type="text/babel">
+    const { useState, useEffect } = React;
 
-// Medios de pago / Cuentas
-const PAYMENT_METHODS = {
-  mercado_pago: { name: 'Mercado Pago', isCredit: false, badgeClass: 'bg-sky-100 text-sky-800 border-sky-300' },
-  transferencia: { name: 'Banco / Transferencia', isCredit: false, badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
-  tarjeta_credito: { name: 'Tarjeta de Crédito', isCredit: true, badgeClass: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
-  efectivo: { name: 'Efectivo', isCredit: false, badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
-};
+    function App() {
+      const [saldos, setSaldos] = useState({ mercado_pago: 0, transferencia: 0, efectivo: 0 });
+      const [transacciones, setTransacciones] = useState([]);
+      const [monto, setMonto] = useState('');
+      const [descripcion, setDescripcion] = useState('');
+      const [categoria, setCategoria] = useState('Supermercado');
+      const [metodo, setMetodo] = useState('mercado_pago');
 
-// Configuración de Firebase y variables de entorno
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : {
-      apiKey: "demo-key",
-      authDomain: "demo.firebaseapp.com",
-      projectId: "demo-project",
-      storageBucket: "demo.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "1:123456789:web:123456"
-    };
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'finanzas-app-default';
-
-export default function App() {
-  // Estado de Autenticación
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-
-  // Estado de Datos Financieros
-  const [initialBalances, setInitialBalances] = useState({
-    mercado_pago: 0,
-    transferencia: 0,
-    efectivo: 0
-  });
-
-  const [transactions, setTransactions] = useState([]);
-  const [dataLoading, setDataLoading] = useState(false);
-
-  // Modales y formularios
-  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-  const [tempBalances, setTempBalances] = useState(initialBalances);
-
-  // Formulario para transacción
-  const [txType, setTxType] = useState('gasto');
-  const [txAmount, setTxAmount] = useState('');
-  const [txDescription, setTxDescription] = useState('');
-  const [txCategory, setTxCategory] = useState('Supermercado');
-  const [txMethod, setTxMethod] = useState('mercado_pago');
-  const [txInstallments, setTxInstallments] = useState(1);
-  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
-
-  // Filtros
-  const [filterMonth, setFilterMonth] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [filterCategory, setFilterCategory] = useState('todas');
-  const [filterMethod, setFilterMethod] = useState('todos');
-
-  // 1. Inicialización de Autenticación de Firebase
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        }
-      } catch (err) {
-        console.warn("Autenticación con token custom falló, esperando acción del usuario", err);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Carga y Sincronización en tiempo real desde Firestore
-  useEffect(() => {
-    if (!user) {
-      setTransactions([]);
-      setInitialBalances({ mercado_pago: 0, transferencia: 0, efectivo: 0 });
-      return;
-    }
-
-    setDataLoading(true);
-
-    // Escuchar Saldos Iniciales (Privado del usuario)
-    const balancesDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'balances');
-    const unsubBalances = onSnapshot(balancesDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setInitialBalances(docSnap.data());
-      } else {
-        // Inicializar por defecto en la nube si no existe
-        const defaultBal = { mercado_pago: 0, transferencia: 0, efectivo: 0 };
-        setDoc(balancesDocRef, defaultBal).catch(console.error);
-        setInitialBalances(defaultBal);
-      }
-    }, (error) => console.error("Error al escuchar saldos:", error));
-
-    // Escuchar Transacciones (Privado del usuario)
-    const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
-    const unsubTx = onSnapshot(txCollectionRef, (querySnapshot) => {
-      const txs = [];
-      querySnapshot.forEach((doc) => {
-        txs.push({ id: doc.id, ...doc.data() });
-      });
-      // Ordenar por fecha descendente en JS
-      txs.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setTransactions(txs);
-      setDataLoading(false);
-    }, (error) => {
-      console.error("Error al escuchar transacciones:", error);
-      setDataLoading(false);
-    });
-
-    return () => {
-      unsubBalances();
-      unsubTx();
-    };
-  }, [user]);
-
-  // Actualizar categorías al cambiar tipo
-  useEffect(() => {
-    if (txType === 'ingreso') {
-      setTxCategory('Sueldo');
-    } else if (txCategory === 'Sueldo') {
-      setTxCategory('Supermercado');
-    }
-  }, [txType]);
-
-  // Handlers de Autenticación
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    if (!authEmail || !authPassword) {
-      setAuthError('Por favor ingresa tu correo y contraseña.');
-      return;
-    }
-
-    try {
-      if (isRegisterMode) {
-        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-      } else {
-        await signInWithEmailAndPassword(auth, authEmail, authPassword);
-      }
-    } catch (err) {
-      console.error(err);
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        setAuthError('Correo o contraseña incorrectos.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setAuthError('Este correo ya está registrado.');
-      } else if (err.code === 'auth/weak-password') {
-        setAuthError('La contraseña debe tener al menos 6 caracteres.');
-      } else {
-        setAuthError('Ocurrió un error al procesar la autenticación.');
-      }
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error("Error al cerrar sesión", err);
-    }
-  };
-
-  // Filtrado de transacciones
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
-      const matchMonth = t.date ? t.date.startsWith(filterMonth) : false;
-      const matchCat = filterCategory === 'todas' || t.category === filterCategory;
-      const matchMethod = filterMethod === 'todos' || t.method === filterMethod;
-      return matchMonth && matchCat && matchMethod;
-    });
-  }, [transactions, filterMonth, filterCategory, filterMethod]);
-
-  // Cálculo de Métricas y Saldos en tiempo real
-  const totals = useMemo(() => {
-    const baseInitial = Number(initialBalances.mercado_pago || 0) + 
-                        Number(initialBalances.transferencia || 0) + 
-                        Number(initialBalances.efectivo || 0);
-
-    let liquidIncomes = 0;
-    let liquidExpenses = 0;
-    let creditExpensesMonth = 0;
-
-    transactions.forEach(t => {
-      const amount = Number(t.amount || 0);
-      if (t.type === 'ingreso') {
-        liquidIncomes += amount;
-      } else if (t.type === 'gasto') {
-        if (t.method === 'tarjeta_credito') {
-          if (t.date && t.date.startsWith(filterMonth)) {
-            creditExpensesMonth += amount;
-          }
-        } else {
-          liquidExpenses += amount;
-        }
-      }
-    });
-
-    const currentLiquidBalance = baseInitial + liquidIncomes - liquidExpenses;
-
-    return {
-      initialTotal: baseInitial,
-      totalLiquidIncomes: liquidIncomes,
-      totalLiquidExpenses: liquidExpenses,
-      availableBalance: currentLiquidBalance,
-      creditExpensesMonth
-    };
-  }, [initialBalances, transactions, filterMonth]);
-
-  // Distribución por categoría del mes filtrado
-  const categoryStats = useMemo(() => {
-    const stats = {};
-    let totalExpenseMonth = 0;
-
-    filteredTransactions.forEach(t => {
-      if (t.type === 'gasto') {
-        const val = Number(t.amount);
-        stats[t.category] = (stats[t.category] || 0) + val;
-        totalExpenseMonth += val;
-      }
-    });
-
-    return Object.keys(stats).map(cat => ({
-      category: cat,
-      amount: stats[cat],
-      percentage: totalExpenseMonth > 0 ? Math.round((stats[cat] / totalExpenseMonth) * 100) : 0
-    })).sort((a, b) => b.amount - a.amount);
-  }, [filteredTransactions]);
-
-  // Handlers Guardado en Firestore
-  const handleAddTransaction = async (e) => {
-    e.preventDefault();
-    if (!user || !txAmount || Number(txAmount) <= 0) return;
-
-    try {
-      const newTx = {
-        type: txType,
-        amount: parseFloat(txAmount),
-        description: txDescription || (txType === 'ingreso' ? 'Ingreso de dinero' : txCategory),
-        category: txCategory,
-        method: txMethod,
-        installments: txMethod === 'tarjeta_credito' ? Number(txInstallments) : 1,
-        date: txDate,
-        createdAt: new Date().toISOString()
+      const agregarTransaccion = (e) => {
+        e.preventDefault();
+        if (!monto || isNaN(monto)) return;
+        const nuevaTx = {
+          id: Date.now(),
+          monto: parseFloat(monto),
+          descripcion,
+          categoria,
+          metodo,
+          fecha: new Date().toLocaleDateString('es-AR')
+        };
+        setTransacciones([nuevaTx, ...transacciones]);
+        setMonto('');
+        setDescripcion('');
       };
 
-      const txCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
-      await addDoc(txCollectionRef, newTx);
+      const totalGastos = transacciones.reduce((acc, tx) => acc + tx.monto, 0);
 
-      // Limpiar Formulario
-      setTxAmount('');
-      setTxDescription('');
-      setTxInstallments(1);
-    } catch (err) {
-      console.error("Error guardando transacción:", err);
-    }
-  };
+      return (
+        <div class="max-w-md mx-auto p-4 space-y-6">
+          <header class="text-center border-b border-slate-700 pb-4">
+            <h1 class="text-2xl font-bold text-emerald-400">Control de Gastos</h1>
+            <p class="text-sm text-slate-400">Usuario: <span class="font-semibold text-white">SANIDENA</span></p>
+          </header>
 
-  const handleDeleteTransaction = async (id) => {
-    if (!user) return;
-    try {
-      const txDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id);
-      await deleteDoc(txDocRef);
-    } catch (err) {
-      console.error("Error al eliminar transacción:", err);
-    }
-  };
-
-  const handleSaveInitialBalances = async (e) => {
-    e.preventDefault();
-    if (!user) return;
-
-    try {
-      const parsedBalances = {
-        mercado_pago: parseFloat(tempBalances.mercado_pago || 0),
-        transferencia: parseFloat(tempBalances.transferencia || 0),
-        efectivo: parseFloat(tempBalances.efectivo || 0)
-      };
-
-      const balancesDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'balances');
-      await setDoc(balancesDocRef, parsedBalances);
-      setInitialBalances(parsedBalances);
-      setIsBalanceModalOpen(false);
-    } catch (err) {
-      console.error("Error al guardar saldos:", err);
-    }
-  };
-
-  // Formato Moneda
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      maximumFractionDigits: 0
-    }).format(val || 0);
-  };
-
-  // 1. Pantalla de Carga Inicial
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-4">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-        <p className="text-slate-400 font-medium text-sm">Cargando aplicación segura...</p>
-      </div>
-    );
-  }
-
-  // 2. Pantalla de Autenticación / Login / Registro
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
-          {/* Elemento Decorativo */}
-          <div className="absolute -top-12 -right-12 w-32 h-32 bg-blue-600/20 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-purple-600/20 rounded-full blur-2xl pointer-events-none" />
-
-          {/* Icono y Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex p-3 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl shadow-lg shadow-blue-500/30 mb-3">
-              <Wallet className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">Mi Control de Gastos</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              {isRegisterMode ? 'Crea una cuenta para proteger tus finanzas' : 'Inicia sesión para ingresar a tus movimientos'}
-            </p>
+          <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total Acumulado</h2>
+            <p class="text-3xl font-extrabold text-white">${totalGastos.toLocaleString('es-AR')}</p>
           </div>
 
-          {/* Formulario Auth */}
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {authError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-semibold text-center">
-                {authError}
-              </div>
-            )}
-
+          <form onSubmit={agregarTransaccion} class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-4">
+            <h3 class="font-bold text-lg border-b border-slate-700 pb-2">Registrar Movimiento</h3>
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Correo Electrónico</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="email"
-                  required
-                  placeholder="usuario@email.com"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                />
+              <label class="block text-xs text-slate-400 mb-1">Monto ($)</label>
+              <input 
+                type="number" 
+                value={monto} 
+                onChange={(e) => setMonto(e.target.value)}
+                placeholder="0" 
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" 
+                required 
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Descripción</label>
+              <input 
+                type="text" 
+                value={descripcion} 
+                onChange={(e) => setDescripcion(e.target.value)}
+                placeholder="Ej: Compra semanal" 
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" 
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Categoría</label>
+                <select 
+                  value={categoria} 
+                  onChange={(e) => setCategoria(e.target.value)}
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                >
+                  <option value="Supermercado">Supermercado</option>
+                  <option value="Farmacia">Farmacia</option>
+                  <option value="Servicios">Servicios</option>
+                  <option value="Indumentaria">Indumentaria</option>
+                  <option value="Varios">Varios</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Medio de Pago</label>
+                <select 
+                  value={metodo} 
+                  onChange={(e) => setMetodo(e.target.value)}
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                >
+                  <option value="mercado_pago">Mercado Pago</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta_credito">Tarjeta de Crédito</option>
+                </select>
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Contraseña</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 active:scale-[0.98] transition flex items-center justify-center gap-2 mt-2"
-            >
-              {isRegisterMode ? (
-                <>
-                  <UserCheck className="w-4 h-4" />
-                  Crear Mi Cuenta
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4" />
-                  Iniciar Sesión
-                </>
-              )}
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-lg transition active:scale-95">
+              Guardar Gastos
             </button>
           </form>
 
-          {/* Toggle Registro/Login */}
-          <div className="mt-6 text-center border-t border-slate-800 pt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegisterMode(!isRegisterMode);
-                setAuthError('');
-              }}
-              className="text-xs text-slate-400 hover:text-white transition font-medium"
-            >
-              {isRegisterMode ? (
-                <>¿Ya tienes cuenta? <span className="text-blue-400 underline font-semibold">Inicia Sesión</span></>
-              ) : (
-                <>¿No tienes cuenta aún? <span className="text-blue-400 underline font-semibold">Regístrate gratis</span></>
-              )}
-            </button>
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-            <Shield className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Tus datos están encriptados y protegidos por usuario</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. Aplicación Principal
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 pb-12 font-sans selection:bg-blue-500 selection:text-white">
-      {/* Header Principal */}
-      <header className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg sticky top-0 z-30 border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-blue-600/20 p-2 rounded-xl border border-blue-500/30">
-              <Wallet className="w-6 h-6 text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight leading-none text-white">Mi Control de Gastos</h1>
-              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                {user.email || `Usuario: ${user.uid.substring(0, 6)}...`}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => {
-                setTempBalances(initialBalances);
-                setIsBalanceModalOpen(true);
-              }}
-              className="flex items-center space-x-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl transition active:scale-95 text-slate-200"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline font-medium">Saldo Inicial</span>
-            </button>
-
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-1.5 text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-3 py-2 rounded-xl transition active:scale-95 font-medium"
-              title="Cerrar Sesión"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Salir</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
-        {/* Resumen de Tarjetas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          
-          {/* Card: Saldo Disponible Real */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition relative overflow-hidden">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Saldo Liquido Disponible</span>
-              <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
-                <PiggyBank className="w-5 h-5" />
-              </div>
-            </div>
-            <div className={`text-3xl font-extrabold ${totals.availableBalance < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-              {formatCurrency(totals.availableBalance)}
-            </div>
-            <div className="mt-3 text-xs text-slate-500 border-t border-slate-100 pt-2 flex justify-between items-center">
-              <span>Monto base: {formatCurrency(totals.initialTotal)}</span>
-              <span className="text-emerald-600 font-semibold flex items-center">
-                <ArrowUpRight className="w-3 h-3 mr-0.5" />
-                Real disponible
-              </span>
-            </div>
-          </div>
-
-          {/* Card: Resumen Tarjeta de Crédito */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Resumen Tarjeta ({filterMonth})</span>
-              <div className="p-2 bg-fuchsia-50 rounded-lg text-fuchsia-600">
-                <CreditCard className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-extrabold text-fuchsia-700">
-              {formatCurrency(totals.creditExpensesMonth)}
-            </div>
-            <div className="mt-3 text-xs text-slate-500 border-t border-slate-100 pt-2 flex justify-between items-center">
-              <span>Acumulado del mes</span>
-              <span className="text-fuchsia-600 font-medium">A pagar al cierre</span>
-            </div>
-          </div>
-
-          {/* Card: Cuentas individuales */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition sm:col-span-2 lg:col-span-1">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Cuentas (Saldos Iniciales)</span>
-              <button 
-                onClick={() => {
-                  setTempBalances(initialBalances);
-                  setIsBalanceModalOpen(true);
-                }}
-                className="text-xs text-blue-600 hover:underline font-medium"
-              >
-                Editar
-              </button>
-            </div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Mercado Pago:</span>
-                <span className="font-bold text-slate-800">{formatCurrency(initialBalances.mercado_pago)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Banco / Transferencia:</span>
-                <span className="font-bold text-slate-800">{formatCurrency(initialBalances.transferencia)}</span>
-              </div>
-              <div className="flex justify-between items-center py-1">
-                <span className="text-slate-600 font-medium">Efectivo:</span>
-                <span className="font-bold text-slate-800">{formatCurrency(initialBalances.efectivo)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Formulario Carga de Transacciones */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <h2 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <PlusCircle className="w-5 h-5 text-blue-600" />
-            Cargar Movimiento
-          </h2>
-
-          <form onSubmit={handleAddTransaction} className="space-y-4">
-            {/* Toggle Tipo: Gasto / Ingreso */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setTxType('gasto')}
-                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                  txType === 'gasto'
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <ArrowDownRight className="w-4 h-4" />
-                Gasto / Pago
-              </button>
-              <button
-                type="button"
-                onClick={() => setTxType('ingreso')}
-                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                  txType === 'ingreso'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <ArrowUpRight className="w-4 h-4" />
-                Ingreso de Dinero
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Monto */}
-              <div className="sm:col-span-2 md:col-span-1">
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Monto ($)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="0.00"
-                    required
-                    value={txAmount}
-                    onChange={(e) => setTxAmount(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-900"
-                  />
-                </div>
-              </div>
-
-              {/* Descripción */}
-              <div className="sm:col-span-2 md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Descripción / Concepto</label>
-                <input
-                  type="text"
-                  placeholder={txType === 'gasto' ? 'Ej: Supermercado, Farmacia, Impuestos...' : 'Ej: Cobro de sueldo, transferencia...'}
-                  value={txDescription}
-                  onChange={(e) => setTxDescription(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
-                />
-              </div>
-
-              {/* Fecha */}
-              <div className="sm:col-span-1 md:col-span-1">
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Fecha</label>
-                <input
-                  type="date"
-                  required
-                  value={txDate}
-                  onChange={(e) => setTxDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-xs sm:text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-              {/* Categoría */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Categoría</label>
-                <select
-                  value={txCategory}
-                  onChange={(e) => setTxCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
-                >
-                  {Object.keys(CATEGORIES).map((catKey) => (
-                    <option key={catKey} value={catKey}>
-                      {CATEGORIES[catKey].name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Medio de Pago */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Medio de Pago / Cuenta</label>
-                <select
-                  value={txMethod}
-                  onChange={(e) => setTxMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900"
-                >
-                  {Object.keys(PAYMENT_METHODS).map((mKey) => (
-                    <option key={mKey} value={mKey}>
-                      {PAYMENT_METHODS[mKey].name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Cuotas */}
-              {txMethod === 'tarjeta_credito' ? (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Cuotas</label>
-                  <select
-                    value={txInstallments}
-                    onChange={(e) => setTxInstallments(e.target.value)}
-                    className="w-full px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-purple-900 font-semibold"
-                  >
-                    <option value={1}>1 Pago (Sin cuotas)</option>
-                    <option value={3}>3 Cuotas</option>
-                    <option value={6}>6 Cuotas</option>
-                    <option value={12}>12 Cuotas</option>
-                  </select>
-                </div>
-              ) : (
-                <div className="flex items-end">
-                  <div className="text-xs text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-2 w-full text-center">
-                    Resta inmediato del saldo
+          <div class="space-y-3">
+            <h3 class="font-bold text-lg text-slate-300">Últimos Registros</h3>
+            {transacciones.length === 0 ? (
+              <p class="text-sm text-slate-500 text-center py-4">No hay gastos cargados aún.</p>
+            ) : (
+              transacciones.map(tx => (
+                <div key={tx.id} class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex justify-between items-center">
+                  <div>
+                    <p class="font-bold">{tx.descripcion || tx.categoria}</p>
+                    <p class="text-xs text-slate-400">{tx.fecha} • {tx.categoria} ({tx.metodo.replace('_', ' ')})</p>
                   </div>
+                  <span class="font-bold text-rose-400">-${tx.monto.toLocaleString('es-AR')}</span>
                 </div>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              className={`w-full py-3 rounded-xl font-bold text-white shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 ${
-                txType === 'gasto'
-                  ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 shadow-rose-200'
-                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-200'
-              }`}
-            >
-              <PlusCircle className="w-5 h-5" />
-              Guardar Movimiento
-            </button>
-          </form>
-        </div>
-
-        {/* Sección de Filtros y Historial */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* Gráfico y Estadísticas por Categoría */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 h-fit">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <PieIcon className="w-4 h-4 text-indigo-600" />
-              Gastos por Categoría
-            </h3>
-
-            {categoryStats.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-sm">
-                No hay gastos en el período seleccionado.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {categoryStats.map(item => {
-                  const catInfo = CATEGORIES[item.category] || CATEGORIES.Varios;
-                  const Icon = catInfo.icon;
-                  return (
-                    <div key={item.category} className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                          <span className={`p-1 rounded-md text-white ${catInfo.color}`}>
-                            <Icon className="w-3 h-3" />
-                          </span>
-                          {catInfo.name}
-                        </span>
-                        <span className="font-bold text-slate-900">{formatCurrency(item.amount)} ({item.percentage}%)</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full ${catInfo.color} transition-all duration-500`} 
-                          style={{ width: `${item.percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Historial */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-            
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Historial de Movimientos</h3>
-                <p className="text-xs text-slate-500">Registros sincronizados en tu cuenta</p>
-              </div>
-
-              {/* Controles de Filtros */}
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="month"
-                  value={filterMonth}
-                  onChange={(e) => setFilterMonth(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
-                />
-
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
-                >
-                  <option value="todas">Todas las cat.</option>
-                  {Object.keys(CATEGORIES).map(c => (
-                    <option key={c} value={c}>{CATEGORIES[c].name}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={filterMethod}
-                  onChange={(e) => setFilterMethod(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
-                >
-                  <option value="todos">Todos los medios</option>
-                  {Object.keys(PAYMENT_METHODS).map(m => (
-                    <option key={m} value={m}>{PAYMENT_METHODS[m].name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Lista */}
-            {dataLoading ? (
-              <div className="text-center py-12 text-slate-400">
-                <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin text-blue-500" />
-                <p className="text-sm">Cargando tus registros...</p>
-              </div>
-            ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <Receipt className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No se encontraron movimientos registrados.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredTransactions.map((tx) => {
-                  const catInfo = CATEGORIES[tx.category] || CATEGORIES.Varios;
-                  const Icon = catInfo.icon;
-                  const methodInfo = PAYMENT_METHODS[tx.method] || PAYMENT_METHODS.mercado_pago;
-                  const isExpense = tx.type === 'gasto';
-
-                  return (
-                    <div
-                      key={tx.id}
-                      className="flex items-center justify-between p-3.5 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition"
-                    >
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div className={`p-2.5 rounded-xl shrink-0 ${catInfo.lightColor}`}>
-                          <Icon className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-800 text-sm truncate">{tx.description}</p>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                            <span className="text-[11px] text-slate-500">{tx.date}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${methodInfo.badgeClass}`}>
-                              {methodInfo.name}
-                              {tx.installments > 1 && ` (${tx.installments} cuotas)`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-3 shrink-0 ml-2">
-                        <div className="text-right">
-                          <span
-                            className={`font-extrabold text-sm block ${
-                              isExpense ? 'text-rose-600' : 'text-emerald-600'
-                            }`}
-                          >
-                            {isExpense ? '-' : '+'}{formatCurrency(tx.amount)}
-                          </span>
-                          <span className="text-[10px] text-slate-400 block capitalize">{catInfo.name}</span>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteTransaction(tx.id)}
-                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition"
-                          title="Eliminar movimiento"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              ))
             )}
           </div>
         </div>
-      </main>
+      );
+    }
 
-      {/* Modal Editar Saldo Inicial */}
-      {isBalanceModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
-            <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-blue-600" />
-              Configurar Saldo Inicial
-            </h3>
-            <p className="text-xs text-slate-500 mb-5">
-              Ingresá el saldo real disponible en tus cuentas con el que inicias.
-            </p>
-
-            <form onSubmit={handleSaveInitialBalances} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Mercado Pago ($)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={tempBalances.mercado_pago}
-                  onChange={(e) => setTempBalances({ ...tempBalances, mercado_pago: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Cuenta Bancaria / Transferencias ($)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={tempBalances.transferencia}
-                  onChange={(e) => setTempBalances({ ...tempBalances, transferencia: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Efectivo ($)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={tempBalances.efectivo}
-                  onChange={(e) => setTempBalances({ ...tempBalances, efectivo: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsBalanceModalOpen(false)}
-                  className="w-1/2 py-2.5 rounded-xl font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 text-sm"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="w-1/2 py-2.5 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 text-sm shadow-md"
-                >
-                  Guardar Saldos
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
