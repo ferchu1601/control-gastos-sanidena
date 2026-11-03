@@ -27,7 +27,6 @@
       appId: "1:717639817293:web:3e3da65bb5fb606427a404"
     };
 
-    // Inicializar Firebase
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -40,7 +39,7 @@
       const [autenticado, setAutenticado] = React.useState(false);
       const [errorPin, setErrorPin] = React.useState(false);
 
-      // Estados sincronizados con Firebase
+      // Estados de datos
       const [cajaAhorro, setCajaAhorro] = React.useState(0);
       const [transacciones, setTransacciones] = React.useState([]);
       const [cargando, setCargando] = React.useState(true);
@@ -49,15 +48,17 @@
       const [tempCaja, setTempCaja] = React.useState('');
       const [ocultarSaldo, setOcultarSaldo] = React.useState(false);
 
+      // Filtro de mes
+      const [mesFiltro, setMesFiltro] = React.useState('TODOS');
+
       const [monto, setMonto] = React.useState('');
       const [descripcion, setDescripcion] = React.useState('');
       const [categoria, setCategoria] = React.useState('Supermercado');
       const [metodo, setMetodo] = React.useState('mercado_pago');
       const [editandoId, setEditandoId] = React.useState(null);
 
-      // Sincronización en tiempo real desde la Nube
+      // Sincronización en tiempo real
       React.useEffect(() => {
-        // Escuchar cambios en la caja de ahorro
         const unsubCaja = db.collection('datos_sanidena').doc('caja').onSnapshot((doc) => {
           if (doc.exists) {
             setCajaAhorro(doc.data().monto || 0);
@@ -66,7 +67,6 @@
           }
         });
 
-        // Escuchar cambios en las transacciones
         const unsubTx = db.collection('transacciones_sanidena')
           .orderBy('fechaId', 'desc')
           .onSnapshot((snapshot) => {
@@ -105,6 +105,11 @@
         e.preventDefault();
         if (!monto || isNaN(monto)) return;
 
+        const hoy = new Date();
+        const fechaTxt = hoy.toLocaleDateString('es-AR');
+        // Guardamos también formato YYYY-MM para filtrar fácilmente
+        const mesClave = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+
         if (editandoId) {
           await db.collection('transacciones_sanidena').doc(editandoId).update({
             monto: parseFloat(monto),
@@ -120,7 +125,8 @@
             descripcion,
             categoria,
             metodo,
-            fecha: new Date().toLocaleDateString('es-AR')
+            fecha: fechaTxt,
+            mesClave: mesClave
           };
           await db.collection('transacciones_sanidena').add(nuevaTx);
         }
@@ -146,7 +152,78 @@
         }
       };
 
-      const totalGastos = transacciones.reduce((acc, tx) => acc + tx.monto, 0);
+      // Funcionalidad: Eliminar TODOS los registros
+      const vaciarTodosLosRegistros = async () => {
+        const confirmar = window.confirm('⚠️ ¿Estás segura de que quieres borrar TODOS los registros de gastos para reiniciar el mes? Esta acción no se puede deshacer.');
+        if (!confirmar) return;
+
+        const snapshot = await db.collection('transacciones_sanidena').get();
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        alert('¡Todos los registros han sido borrados con éxito!');
+      };
+
+      // Funcionalidad: Exportar a Excel (CSV)
+      const exportarExcel = () => {
+        if (transacciones.length === 0) {
+          alert('No hay datos registrados para exportar.');
+          return;
+        }
+
+        const encabezados = ["Fecha", "Categoria", "Metodo de Pago", "Descripcion", "Monto ($)"];
+        const filas = txsFiltradas.map(tx => [
+          `"${tx.fecha || ''}"`,
+          `"${tx.categoria || ''}"`,
+          `"${(tx.metodo || '').replace('_', ' ')}"`,
+          `"${(tx.descripcion || '').replace(/"/g, '""')}"`,
+          tx.monto
+        ]);
+
+        const contenidoCSV = "\uFEFF" + [encabezados.join(";"), ...filas.map(f => f.join(";"))].join("\n");
+        const blob = new Blob([contenidoCSV], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Gastos_Sanidena_${mesFiltro === 'TODOS' ? 'Completo' : mesFiltro}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      // Obtener lista de meses disponibles para el selector
+      const obtenerMesesDisponibles = () => {
+        const mesesSet = new Set();
+        transacciones.forEach(tx => {
+          if (tx.mesClave) {
+            mesesSet.add(tx.mesClave);
+          } else if (tx.fecha) {
+            const partes = tx.fecha.split('/');
+            if (partes.length === 3) {
+              mesesSet.add(`${partes[2]}-${partes[1].padStart(2, '0')}`);
+            }
+          }
+        });
+        return Array.from(mesesSet).sort().reverse();
+      };
+
+      // Filtrar transacciones según el mes seleccionado
+      const txsFiltradas = transacciones.filter(tx => {
+        if (mesFiltro === 'TODOS') return true;
+        if (tx.mesClave) return tx.mesClave === mesFiltro;
+        if (tx.fecha) {
+          const partes = tx.fecha.split('/');
+          if (partes.length === 3) {
+            const m = `${partes[2]}-${partes[1].padStart(2, '0')}`;
+            return m === mesFiltro;
+          }
+        }
+        return true;
+      });
+
+      const totalGastos = txsFiltradas.reduce((acc, tx) => acc + tx.monto, 0);
       const saldoRestante = cajaAhorro - totalGastos;
 
       // --- PANTALLA DE BLOQUEO POR PIN ---
@@ -251,7 +328,9 @@
 
           {/* Saldo Restante */}
           <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dinero Restante en la Cuenta</h2>
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+              Dinero Restante {mesFiltro !== 'TODOS' ? `(${mesFiltro})` : ''}
+            </h2>
             <p className={`text-3xl font-extrabold ${saldoRestante < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
               {ocultarSaldo ? '••••••••' : `$${saldoRestante.toLocaleString('es-AR')}`}
             </p>
@@ -329,15 +408,60 @@
             </button>
           </form>
 
+          {/* SECCIÓN DE HERRAMIENTAS: Filtro, Exportar y Borrar Todo */}
+          <div className="bg-white p-4 rounded-xl border border-slate-300 shadow-sm space-y-3">
+            <h3 className="font-bold text-sm text-slate-700">⚙️ Herramientas y Filtros</h3>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Filtrar por Mes</label>
+                <select 
+                  value={mesFiltro} 
+                  onChange={(e) => setMesFiltro(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-semibold text-slate-700"
+                >
+                  <option value="TODOS">Ver Todos los Meses</option>
+                  {obtenerMesesDisponibles().map(mes => (
+                    <option key={mes} value={mes}>{mes}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <button 
+                  onClick={exportarExcel}
+                  className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1 shadow-sm transition"
+                >
+                  📊 Descargar Excel (CSV)
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200">
+              <button 
+                onClick={vaciarTodosLosRegistros}
+                className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1"
+              >
+                🗑️ Borrar TODOS los gastos (Reiniciar Mes)
+              </button>
+            </div>
+          </div>
+
           {/* Historial */}
           <div className="space-y-3">
-            <h3 className="font-bold text-lg text-slate-700">Últimos Registros</h3>
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-lg text-slate-700">Registros</h3>
+              <span className="text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                {txsFiltradas.length} gastos
+              </span>
+            </div>
+
             {cargando ? (
               <p className="text-sm text-slate-500 text-center py-4 bg-white rounded-lg border border-slate-200">Cargando datos desde la nube...</p>
-            ) : transacciones.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-4 bg-white rounded-lg border border-slate-200">No hay gastos cargados aún.</p>
+            ) : txsFiltradas.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4 bg-white rounded-lg border border-slate-200">No hay gastos en este filtro.</p>
             ) : (
-              transacciones.map(tx => (
+              txsFiltradas.map(tx => (
                 <div key={tx.id} className="bg-white p-3 rounded-lg border border-slate-300 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="font-bold text-slate-800">{tx.descripcion || tx.categoria}</p>
